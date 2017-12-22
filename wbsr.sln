@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.27004.2010
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "wbsr", "wbsr\wbsr.vcxproj", "{873FA792-B17F-459A-AC15-B5E2EE75AFCE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{873FA792-B17F-459A-AC15-B5E2EE75AFCE}.Debug|x64.ActiveCfg = Debug|x64
+		{873FA792-B17F-459A-AC15-B5E2EE75AFCE}.Debug|x64.Build.0 = Debug|x64
+		{873FA792-B17F-459A-AC15-B5E2EE75AFCE}.Debug|x86.ActiveCfg = Debug|Win32
+		{873FA792-B17F-459A-AC15-B5E2EE75AFCE}.Debug|x86.Build.0 = Debug|Win32
+		{873FA792-B17F-459A-AC15-B5E2EE75AFCE}.Release|x64.ActiveCfg = Release|x64
+		{873FA792-B17F-459A-AC15-B5E2EE75AFCE}.Release|x64.Build.0 = Release|x64
+		{873FA792-B17F-459A-AC15-B5E2EE75AFCE}.Release|x86.ActiveCfg = Release|Win32
+		{873FA792-B17F-459A-AC15-B5E2EE75AFCE}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {FA3292C8-FAE2-40DC-AF8C-553D09C82EEC}
+	EndGlobalSection
+EndGlobal
