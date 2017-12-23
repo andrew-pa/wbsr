@@ -4,7 +4,7 @@ using namespace agt;
 
 struct vertex {
 	vec4 pos;
-	vec3 col;
+	vec3 nor;
 	vec2 tex;
 };
 
@@ -116,6 +116,7 @@ void generate_sphere(float radius, uint slice_count, uint stack_count, function<
 	}
 }
 
+const vec3 L = normalize(vec3(0.5f, 1.f, -0.2f));
 void draw(const vector<vertex>& vertices, const vector<uint32>& indices, texture<vec3,vec2>& tex, texture2d& target, float* depth) {
 	for (int i = 0; i < indices.size(); i += 3) {
 		auto& v0 = vertices[indices[i]];
@@ -147,31 +148,46 @@ void draw(const vector<vertex>& vertices, const vector<uint32>& indices, texture
 		dgab_dx /= vec3(g0d, a0d, b0d);
 		dgab_dy /= vec3(g0d, a0d, b0d);
 		gab += dgab_dx * min_x + dgab_dy * min_y;
+
+		float d = v1.pos.w*v2.pos.w;
+		float dd_dx = (v2.pos.w*(v0.pos.w - v1.pos.w)) * dgab_dx.z + (v1.pos.w*(v0.pos.w - v2.pos.w)) * dgab_dx.x;
+		float dd_dy = (v2.pos.w*(v0.pos.w - v1.pos.w)) * dgab_dy.z + (v1.pos.w*(v0.pos.w - v2.pos.w)) * dgab_dy.x;
+
 		for (size_t y = min_y; y < max_y; ++y) {
-			vec3 start_gab = gab;
+			vec3 start_gab = gab; float start_d = d;
 			for (size_t x = min_x; x < max_x; ++x) {
 				if (gab.x >= 0 && gab.y >= 0 && gab.z >= 0) {
 					if ((gab.x > 0 || det.x > 0) && (gab.y > 0 || det.y > 0) && (gab.z > 0 || det.z > 0)) {
 						float z = gab.y * v0.pos.z + gab.z * v1.pos.z + gab.x * v2.pos.z;
 						if (z < depth[x + y * target.size.x]) {
-							vec2 uv = gab.y * v0.tex + gab.z * v1.tex + gab.x * v2.tex;
-							vec3 col = gab.y * v0.col + gab.z * v1.col + gab.x * v2.col;
+							//float d = v1.pos.w*v2.pos.w + v2.pos.w*gab.z*(v0.pos.w - v1.pos.w) + v1.pos.w*gab.x*(v0.pos.w - v2.pos.w);
+							float bw = v0.pos.w*v2.pos.w*gab.z / d;
+							float gw = v0.pos.w*v1.pos.w*gab.x / d;
+							float aw = 1.0f - bw - gw;
+							vec2 uv = aw * v0.tex + bw * v1.tex + gw * v2.tex;
+							vec3 nor = aw * v0.nor + bw * v1.nor + gw * v2.nor;
+							vec3 col = vec3(0.9f, 0.8f, 0.6f)*glm::max(0.f, dot(nor, L)) + vec3(0.f, 0.05f, 0.1f);
 							target.pixel(uvec2(x, y)) = pow(col * tex.texel(uv), vec3(0.4545));
 							depth[x + y * target.size.x] = z;
 						}
 					}
 				}
 				gab += dgab_dx;
+				d += dd_dx;
 			}
 			gab = start_gab + dgab_dy;
+			d = start_d + dd_dy;
 		}
 	}
 }
 
-void transform(vector<vertex>& vtc, mat4 transform) {
+void transform(vector<vertex>& vtc, mat4 transform, mat4 world) {
 	for (auto& v : vtc) {
 		v.pos = transform * v.pos;
-		v.pos /= v.pos.w;
+		v.pos.x /= v.pos.w;
+		v.pos.y /= v.pos.w;
+		v.pos.z /= v.pos.w;
+		v.nor = (world * vec4(v.nor, 0.f)).xyz;
 	}
 }
 
@@ -190,10 +206,9 @@ int main() {
 		1,2,3*/
 	};
 
-	const vec3 L = normalize(vec3(0.5f, 1.f, -0.2f));
 
-	generate_torus(vec2(1.f, 0.5f), 8, [&vtc, L](vec3 p, vec3 n, vec3, vec2 texcoord) {
-		vtc.push_back(vertex{ vec4(p, 1.f), vec3(0.8f, 0.4f, 0.f)*glm::max(0.f, dot(n, L))+vec3(0.f, 0.05f, 0.15f), texcoord });
+	generate_torus(vec2(1.f, 0.5f), 32, [&vtc](vec3 p, vec3 n, vec3, vec2 texcoord) {
+		vtc.push_back(vertex{ vec4(p, 1.f), n, texcoord });
 	}, [&ixd](size_t i) {
 		ixd.push_back(i);
 	});
@@ -212,7 +227,7 @@ int main() {
 	mat4 V = lookAt(vec3(0.f, 0.f, 8.f), vec3(0.f), vec3(0.f, 1.f, 0.f));
 	mat4 P = perspectiveFov(pi<float>() / 4.f, 640.f, 400.f, 0.01f, 100.f);
 	mat4 Wn = scale(translate(mat4(1), vec3(320.f, 200.f, 0.f)), vec3(640.f, -400.f, 1.f));
-	transform(vtc, Wn*P*V*W);//rotate(translate(mat4(1), vec3(320.f, 200.f, 0.f)), 1.f, vec3(0.f, 0.f, 1.f)));
+	transform(vtc, Wn*P*V*W, W);//rotate(translate(mat4(1), vec3(320.f, 200.f, 0.f)), 1.f, vec3(0.f, 0.f, 1.f)));
 
 	draw(vtc, ixd, tex, buf, depth.data());
 
