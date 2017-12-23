@@ -115,7 +115,7 @@ void generate_sphere(float radius, uint slice_count, uint stack_count, function<
 	}
 }
 
-void draw(const vector<vertex>& vertices, const vector<uint32>& indices, texture2d& target) {
+void draw(const vector<vertex>& vertices, const vector<uint32>& indices, texture2d& target, float* depth) {
 	for (int i = 0; i < indices.size(); i += 3) {
 		auto& v0 = vertices[indices[i]];
 		auto& v1 = vertices[indices[i+1]];
@@ -148,8 +148,13 @@ void draw(const vector<vertex>& vertices, const vector<uint32>& indices, texture
 		for (size_t y = min_y; y < max_y; ++y) {
 			vec3 start_gab = gab;
 			for (size_t x = min_x; x < max_x; ++x) {
-				if(gab.x > 0 && gab.y > 0 && gab.z > 0)
-					target.pixel(uvec2(x, y)) = gab.y * v0.col + gab.z * v1.col + gab.x * v2.col;
+				if (gab.x > 0 && gab.y > 0 && gab.z > 0) {
+					float z = gab.y * v0.pos.z + gab.z * v1.pos.z + gab.x * v2.pos.z;
+					if (z < depth[x + y * target.size.x]) {
+						target.pixel(uvec2(x, y)) = gab.y * v0.col + gab.z * v1.col + gab.x * v2.col;
+						depth[x + y * target.size.x] = z;
+					}
+				}
 				gab += dgab_dx;
 			}
 			gab = start_gab + dgab_dy;
@@ -166,6 +171,7 @@ void transform(vector<vertex>& vtc, mat4 transform) {
 
 int main() {
 	texture2d tex{ uvec2(640, 400) };
+	vector<float> depth(tex.size.x*tex.size.y, 1e9);
 
 	auto vtc = vector<vertex>{
 		/*{vec4(0.f, 0.f, 0.f, 1.f), vec3(1.f, 0.f, 0.f)},
@@ -178,7 +184,7 @@ int main() {
 		1,2,3*/
 	};
 
-	const vec3 L = normalize(vec3(0.5f, 1.f, 0.2f));
+	const vec3 L = normalize(vec3(0.5f, 1.f, -0.2f));
 
 	generate_sphere(1.f, 8, 8, [&vtc, L](vec3 p, vec3 n, vec3, vec2) {
 		vtc.push_back(vertex{ vec4(p, 1.f), vec3(0.8f, 0.6f, 0.f)*glm::max(0.f, dot(n, L))+vec3(0.f, 0.05f, 0.15f) });
@@ -199,7 +205,7 @@ int main() {
 	mat4 Wn = scale(translate(mat4(1), vec3(320.f, 200.f, 0.f)), vec3(640.f, -400.f, 1.f));
 	transform(vtc, Wn*P*V);//rotate(translate(mat4(1), vec3(320.f, 200.f, 0.f)), 1.f, vec3(0.f, 0.f, 1.f)));
 
-	draw(vtc, ixd, tex);
+	draw(vtc, ixd, tex, depth.data());
 
 	tex.draw_text("wbsr", uvec2(8, 8), vec3(1.f, 1.f, 0.f));
 	ostringstream filename; filename << "rndr" << time(nullptr) << ".bmp";
