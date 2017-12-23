@@ -186,7 +186,7 @@ int main() {
 
 	const vec3 L = normalize(vec3(0.5f, 1.f, -0.2f));
 
-	generate_sphere(1.f, 8, 8, [&vtc, L](vec3 p, vec3 n, vec3, vec2) {
+	generate_torus(vec2(1.f, 0.5f), 8, [&vtc, L](vec3 p, vec3 n, vec3, vec2) {
 		vtc.push_back(vertex{ vec4(p, 1.f), vec3(0.8f, 0.6f, 0.f)*glm::max(0.f, dot(n, L))+vec3(0.f, 0.05f, 0.15f) });
 	}, [&ixd](size_t i) {
 		ixd.push_back(i);
@@ -200,10 +200,11 @@ int main() {
 	// - world matrix -
 	// model space
 
+	mat4 W = rotate(mat4(1), pi<float>() / 4.f, vec3(1.f, 1.f, 0.f));
 	mat4 V = lookAt(vec3(0.f, 0.f, 8.f), vec3(0.f), vec3(0.f, 1.f, 0.f));
 	mat4 P = perspectiveFov(pi<float>() / 4.f, 640.f, 400.f, 0.01f, 100.f);
 	mat4 Wn = scale(translate(mat4(1), vec3(320.f, 200.f, 0.f)), vec3(640.f, -400.f, 1.f));
-	transform(vtc, Wn*P*V);//rotate(translate(mat4(1), vec3(320.f, 200.f, 0.f)), 1.f, vec3(0.f, 0.f, 1.f)));
+	transform(vtc, Wn*P*V*W);//rotate(translate(mat4(1), vec3(320.f, 200.f, 0.f)), 1.f, vec3(0.f, 0.f, 1.f)));
 
 	draw(vtc, ixd, tex, depth.data());
 
