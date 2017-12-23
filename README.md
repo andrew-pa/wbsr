@@ -2,4 +2,4 @@
 
 A software rasterizer written for kicks during winter break
 
-[[https://github.com/andrew-pa/blob/master/wbsr/demo.png|alt=rendering]]
+![rendering](https://github.com/andrew-pa/wbsr/blob/master/wbsr/demo.png)
