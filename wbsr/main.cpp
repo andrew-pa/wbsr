@@ -1,4 +1,4 @@
-#include "cmmn.h"
+﻿#include "cmmn.h"
 #include "texture.h"
 using namespace agt;
 
@@ -136,42 +136,59 @@ void draw(const vector<rs_vertex>& vertices, const vector<uint32>& indices, func
 		const auto& v1 = vertices[indices[i+1]];
 		const auto& v2 = vertices[indices[i+2]];
 
+		// calculate screen bounds for triangle
 		auto min_x = floor(glm::min(v0.pos.x, glm::min(v1.pos.x, v2.pos.x)));
 		auto min_y = floor(glm::min(v0.pos.y, glm::min(v1.pos.y, v2.pos.y)));
 		auto max_x = ceil(glm::max(v0.pos.x, glm::max(v1.pos.x, v2.pos.x)));
 		auto max_y = ceil(glm::max(v0.pos.y, glm::max(v1.pos.y, v2.pos.y)));
 		
+		// inital barycentric coords (γ, α, β)
 		vec3 gab = vec3(
 			v0.pos.x*v1.pos.y - v1.pos.x*v0.pos.y,
 			v1.pos.x*v2.pos.y - v2.pos.x*v1.pos.y,
 			v2.pos.x*v0.pos.y - v0.pos.x*v2.pos.y);
+		// change in (γ, α, β) with respect to x
 		vec3 dgab_dx = vec3(
 			v0.pos.y - v1.pos.y,
 			v1.pos.y - v2.pos.y,
 			v2.pos.y - v0.pos.y);
+		// change in (γ, α, β) with respect to y
 		vec3 dgab_dy = vec3(
 			v1.pos.x - v0.pos.x,
 			v2.pos.x - v1.pos.x,
 			v0.pos.x - v2.pos.x);
 
+		// calculate line equation values for the vertices
 		float g0d = dgab_dx.x * v2.pos.x + dgab_dy.x * v2.pos.y + gab.x;
 		float a0d = dgab_dx.y * v0.pos.x + dgab_dy.y * v0.pos.y + gab.y;
 		float b0d = dgab_dx.z * v1.pos.x + dgab_dy.z * v1.pos.y + gab.z;
+
+		// calculate line equation values for (-1, -1) to provide a tiebreaker for shared edges
 		vec3 det = vec3(g0d, a0d, b0d) * (-dgab_dx + -dgab_dy + gab);
+
+		// divide in the vertex line equations
 		gab /= vec3(g0d, a0d, b0d);
 		dgab_dx /= vec3(g0d, a0d, b0d);
 		dgab_dy /= vec3(g0d, a0d, b0d);
+
+		// increment (γ, α, β) to their initial values
 		gab += dgab_dx * min_x + dgab_dy * min_y;
 
 		vec3 zs = vec3(v2.pos.z, v0.pos.z, v1.pos.z);
+		// partials of depth with respect to x,y
 		float dz_dx = dot(zs, dgab_dx);
 		float dz_dy = dot(zs, dgab_dy);
+		// calculate initial depth at (min_x, min_y)
 		float z = dot(zs, gab);
 
+		// loop over screen bounds of the triangle
 		for (ptrdiff_t y = min_y; y < max_y; ++y) {
+			// store where this scanline started in (γ, α, β) and depth
 			vec3 start_gab = gab; float start_z = z;
 			for (ptrdiff_t x = min_x; x < max_x; ++x) {
+				// is this pixel inside the triangle?
 				if (gab.x >= 0 && gab.y >= 0 && gab.z >= 0) {
+					// deal with shared edges
 					if ((gab.x > 0 || det.x > 0) && (gab.y > 0 || det.y > 0) && (gab.z > 0 || det.z > 0)) {
 						F(uvec2(x, y), gab, z, v0, v1, v2);
 					}
