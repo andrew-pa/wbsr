@@ -140,6 +140,7 @@ void draw(const vector<rs_vertex>& vertices, const vector<uint32>& indices, func
 		auto min_y = floor(glm::min(v0.pos.y, glm::min(v1.pos.y, v2.pos.y)));
 		auto max_x = ceil(glm::max(v0.pos.x, glm::max(v1.pos.x, v2.pos.x)));
 		auto max_y = ceil(glm::max(v0.pos.y, glm::max(v1.pos.y, v2.pos.y)));
+		
 		vec3 gab = vec3(
 			v0.pos.x*v1.pos.y - v1.pos.x*v0.pos.y,
 			v1.pos.x*v2.pos.y - v2.pos.x*v1.pos.y,
@@ -212,7 +213,7 @@ int main() {
 
 	/* initialize geometry */
 	auto torus_vtc = vector<in_vertex>{ };
-	auto torus_ixd = vector<uint32>{ }; 
+	auto torus_ixd = vector<uint32>{ };
 	generate_torus(vec2(1.f, 0.5f), 32, [&torus_vtc](vec3 p, vec3 n, vec3, vec2 texcoord) {
 		torus_vtc.push_back(in_vertex{ p, n, texcoord });
 	}, [&torus_ixd](size_t i) {
@@ -225,13 +226,13 @@ int main() {
 		{vec3(1.f, 0.f, -1.f), vec3(0.f, 1.f, 0.f), vec2(1.f, 0.f)},
 		{vec3(1.f, 0.f, 1.f), vec3(0.f, 1.f, 0.f), vec2(1.f)},
 	};
-	auto floor_ixd = vector<uint32>{ 0, 1, 2, 1, 2, 3 }; 
+	auto floor_ixd = vector<uint32>{ 0, 1, 2, 1, 2, 3 };
 
 	/* textures */
 	checkerboard_texture tex{ vec3(0.2f), vec3(1.f), 16.f };
 
 	/* object transforms */
-	mat4 torus_W = rotate(mat4(1), pi<float>() / 3.f, vec3(1.f, 1.f, 0.f));
+	mat4 torus_W = mat4(1);// rotate(mat4(1), pi<float>() / 3.f, vec3(1.f, 1.f, 0.f));
 	mat4 floor_W = scale(translate(mat4(1), vec3(0.f, -1.5f, 0.f)), vec3(3.f));
 
 	/* camera transforms */
@@ -248,9 +249,10 @@ int main() {
 	const vec3 L = normalize(vec3(-0.5f, 1.f, -0.2f));
 
 	/* compute light 'camera' transforms */
-	mat4 lightV = lookAt(2.f*L, vec3(0.f), vec3(0.f, 1.f, 0.f));
-	mat4 lightP = ortho(-3.f, 3.f, -3.f, 3.f, 0.1f, 10.f);
-	mat4 lightWnPV = window(uvec2(shadow_size));
+	mat4 lightV = lookAt(8.f*L, vec3(0.f), vec3(0.f, 1.f, 0.f));
+	mat4 lightP =// perspectiveFov(pi<float>() / 3.f, (float)shadow_size, (float)shadow_size, 0.1f, 16.f);
+					ortho(-6.f, 6.f, -6.f, 6.f, 0.1f, 10.f);
+	mat4 lightWnPV = window(uvec2(shadow_size))*lightP*lightV;
 	//	transform geometry wrt the light
 	auto torus_light_tvtc = transform(torus_vtc, lightWnPV, torus_W);
 	auto floor_light_tvtc = transform(floor_vtc, lightWnPV, floor_W);
@@ -264,6 +266,15 @@ int main() {
 	};
 	draw(torus_light_tvtc, torus_ixd, shadow);
 	draw(floor_light_tvtc, floor_ixd, shadow);
+
+	/* debug output of shadow map */
+	texture2d shadow_map{ uvec2(shadow_size) };
+	for (size_t y = 0; y < shadow_size; ++y)
+		for (size_t x = 0; x < shadow_size; ++x) {
+			float z = shadow_depth[x + y * shadow_size];
+			shadow_map.pixel(uvec2(x, y)) = vec3(z > 1000.f ? 0.f : z);
+		}
+	shadow_map.write_bmp("shadow.bmp");
 
 	/* rasterize image */
 	auto shade = [&](uvec2 px, vec3 gab, float z, const rs_vertex& v0, const rs_vertex& v1, const rs_vertex& v2) {
@@ -279,14 +290,13 @@ int main() {
 			vec4 posW = aw * v0.posW + bw * v1.posW + gw * v2.posW;
 			vec4 pos_light = lightWnPV * posW;
 			pos_light /= pos_light.w;
+			pos_light.xy = floor(pos_light.xy());
 			float shadow = 1.f;
-			if (pos_light.x < 0 || pos_light.x >= shadow_size || pos_light.y < 0 || pos_light.y >= shadow_size) {
+			if (pos_light.x >= 0 && pos_light.x < shadow_size && pos_light.y >= 0 && pos_light.y < shadow_size) {
 				float lightZ = shadow_depth[pos_light.x + pos_light.y * shadow_size];
-				if (abs(lightZ - pos_light.z) > 0.01f) shadow = 0.f;
+				if (abs(lightZ - pos_light.z) > 0.001f) shadow = 0.f;
 			}
-			else {
-				shadow = 0.f;
-			}
+			//else shadow = 0.f;
 
 			// interpolate texture coords and normals
 			vec2 uv = aw * v0.tex + bw * v1.tex + gw * v2.tex;
