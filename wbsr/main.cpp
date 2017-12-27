@@ -202,10 +202,11 @@ mat4 window(uvec2 size) {
 }
 
 int main() {
+	auto start = chrono::system_clock::now();
 	/* create render buffers */
 	texture2d buf{
-		uvec2(640, 400)
-		//uvec2(3840, 2160)
+		//uvec2(640, 400)
+		uvec2(3840, 2160)
 	};
 	vector<float> depth(buf.size.x*buf.size.y, 1e9);
 	const size_t shadow_size = 2048;
@@ -241,6 +242,8 @@ int main() {
 	mat4 Wn = window(buf.size);
 	mat4  WnPV = Wn * P * V;
 
+	auto start_transform = chrono::system_clock::now();
+
 	/* transform geometry */
 	auto torus_tvtc = transform(torus_vtc, WnPV, torus_W);
 	auto floor_tvtc = transform(floor_vtc, WnPV, floor_W);
@@ -250,12 +253,13 @@ int main() {
 
 	/* compute light 'camera' transforms */
 	mat4 lightV = lookAt(8.f*L, vec3(0.f), vec3(0.f, 1.f, 0.f));
-	mat4 lightP =// perspectiveFov(pi<float>() / 3.f, (float)shadow_size, (float)shadow_size, 0.1f, 16.f);
-					ortho(-6.f, 6.f, -6.f, 6.f, 0.1f, 10.f);
+	mat4 lightP = ortho(-6.f, 6.f, -6.f, 6.f, 0.1f, 10.f);
 	mat4 lightWnPV = window(uvec2(shadow_size))*lightP*lightV;
 	//	transform geometry wrt the light
 	auto torus_light_tvtc = transform(torus_vtc, lightWnPV, torus_W);
 	auto floor_light_tvtc = transform(floor_vtc, lightWnPV, floor_W);
+
+	auto transform_raster = chrono::system_clock::now();
 
 	/* compute shadow map */
 	auto shadow = [&shadow_depth, &shadow_size](uvec2 px, vec3 gab, float z, const rs_vertex& v0, const rs_vertex& v1, const rs_vertex& v2) {
@@ -268,6 +272,7 @@ int main() {
 	draw(floor_light_tvtc, floor_ixd, shadow);
 
 	/* debug output of shadow map */
+#ifdef DEBUG_SHADOW
 	texture2d shadow_map{ uvec2(shadow_size) };
 	for (size_t y = 0; y < shadow_size; ++y)
 		for (size_t x = 0; x < shadow_size; ++x) {
@@ -275,6 +280,9 @@ int main() {
 			shadow_map.pixel(uvec2(x, y)) = vec3(z > 1000.f ? 0.f : z);
 		}
 	shadow_map.write_bmp("shadow.bmp");
+#endif
+
+	auto raster_shadow = chrono::system_clock::now();
 
 	/* rasterize image */
 	auto shade = [&](uvec2 px, vec3 gab, float z, const rs_vertex& v0, const rs_vertex& v1, const rs_vertex& v2) {
@@ -294,7 +302,7 @@ int main() {
 			float shadow = 1.f;
 			if (pos_light.x >= 0 && pos_light.x < shadow_size && pos_light.y >= 0 && pos_light.y < shadow_size) {
 				float lightZ = shadow_depth[pos_light.x + pos_light.y * shadow_size];
-				if (abs(lightZ - pos_light.z) > 0.001f) shadow = 0.f;
+				if (abs(lightZ - pos_light.z) > 0.1f) shadow = 0.f;
 			}
 			//else shadow = 0.f;
 
@@ -313,8 +321,18 @@ int main() {
 	draw(torus_tvtc, torus_ixd, shade);
 	draw(floor_tvtc, floor_ixd, shade);
 
+	auto raster_end = chrono::system_clock::now();
+
 	/* write render to file */
-	buf.draw_text("wbsr", uvec2(8, 8), vec3(1.f, 1.f, 0.f));
+	ostringstream wm;
+	wm << "WBSR total " << chrono::duration_cast<chrono::milliseconds>(raster_end - start).count() << "ms" << endl;
+	wm << "     init  " << chrono::duration_cast<chrono::milliseconds>(start_transform - start).count() << "ms" << endl;
+	wm << "     trns  " << chrono::duration_cast<chrono::milliseconds>(transform_raster - start_transform).count() << "ms" << endl;
+	wm << "     rstr  " << chrono::duration_cast<chrono::milliseconds>(raster_end - transform_raster).count() << "ms" << endl;
+	wm << "       shdw  " << chrono::duration_cast<chrono::milliseconds>(raster_shadow - transform_raster).count() << "ms" << endl;
+	wm << "       colr  " << chrono::duration_cast<chrono::milliseconds>(raster_end - raster_shadow).count() << "ms" << endl;
+
+	buf.draw_text(wm.str(), uvec2(8, 8), vec3(1.f, 1.f, 0.f));
 	ostringstream filename; filename << "rndr" << time(nullptr) << ".bmp";
 	buf.write_bmp(filename.str());
 }
