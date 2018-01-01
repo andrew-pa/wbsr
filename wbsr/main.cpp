@@ -263,20 +263,54 @@ int main() {
 		torus_ixd.push_back(i);
 	});
 
-	auto floor_vtc = vector<in_vertex>{
-		{vec3(-1.f, 0.f, -1.f), vec3(0.f, 1.f, 0.f), vec2(0.f)},
-		{vec3(-1.f, 0.f, 1.f), vec3(0.f, 1.f, 0.f), vec2(0.f, 1.f)},
-		{vec3(1.f, 0.f, -1.f), vec3(0.f, 1.f, 0.f), vec2(1.f, 0.f)},
-		{vec3(1.f, 0.f, 1.f), vec3(0.f, 1.f, 0.f), vec2(1.f)},
-	};
-	auto floor_ixd = vector<uint32>{ 0, 1, 2, 1, 2, 3 };
+	auto room_vtc = vector<in_vertex>{};
+	auto room_ixd = vector<uint32>{};
+
+	{
+		tinyobj::attrib_t attrib;
+		vector<tinyobj::shape_t> shapes; vector<tinyobj::material_t> materials;
+		string err;
+		tinyobj::LoadObj(&attrib, &shapes, &materials, &err, "room.obj");
+		if (!err.empty()) {
+			cout << "error: " << err << endl;
+			getchar();
+			return 1;
+		}
+
+		unordered_map<size_t, uint32> vertices;
+		size_t index_offset = 0;
+		for (size_t f = 0; f < shapes[0].mesh.num_face_vertices.size(); f++) {
+			int fv = shapes[0].mesh.num_face_vertices[f];
+			// Loop over vertices in the face.
+			for (size_t v = 0; v < fv; v++) {
+				tinyobj::index_t idx = shapes[0].mesh.indices[index_offset + v];
+				size_t hash = idx.vertex_index ^ idx.normal_index << 16 ^ idx.texcoord_index << 24;
+				auto pov = vertices.find(hash);
+				if (pov != vertices.end()) room_ixd.push_back(pov->second);
+				else {
+					room_ixd.push_back(room_vtc.size());
+					vertices[hash] = room_vtc.size();
+					tinyobj::real_t vx = attrib.vertices[3 * idx.vertex_index + 0];
+					tinyobj::real_t vy = attrib.vertices[3 * idx.vertex_index + 1];
+					tinyobj::real_t vz = attrib.vertices[3 * idx.vertex_index + 2];
+					tinyobj::real_t nx = attrib.normals[3 * idx.normal_index + 0];
+					tinyobj::real_t ny = attrib.normals[3 * idx.normal_index + 1];
+					tinyobj::real_t nz = attrib.normals[3 * idx.normal_index + 2];
+					tinyobj::real_t tx = attrib.texcoords[2 * idx.texcoord_index + 0];
+					tinyobj::real_t ty = attrib.texcoords[2 * idx.texcoord_index + 1];
+					room_vtc.push_back(in_vertex{ {vx,vy,vz},{nx,ny,nz},{tx,ty} });
+				}
+			}
+			index_offset += fv;
+		}
+	}
 
 	/* textures */
 	checkerboard_texture tex{ vec3(0.2f), vec3(1.f), 16.f };
 
 	/* object transforms */
 	mat4 torus_W = rotate(mat4(1), pi<float>() / 6.f, vec3(1.f, 1.f, 0.f));
-	mat4 floor_W = scale(translate(mat4(1), vec3(0.f, -1.5f, 0.f)), vec3(3.f));
+	mat4 room_W = scale(mat4(1), vec3(.3f));
 
 	/* camera transforms */
 	mat4 V = lookAt(vec3(-3.f, 4.f, 12.f), vec3(0.f, -0.5f, 0.f), vec3(0.f, 1.f, 0.f));
@@ -288,7 +322,7 @@ int main() {
 
 	/* transform geometry */
 	auto torus_tvtc = transform(torus_vtc, WnPV, torus_W);
-	auto floor_tvtc = transform(floor_vtc, WnPV, floor_W);
+	auto room_tvtc = transform(room_vtc, WnPV, room_W);
 
 	/* deal with lights */
 	const vec3 L = normalize(vec3(-0.5f, 1.f, -0.2f));
@@ -299,7 +333,7 @@ int main() {
 	mat4 lightWnPV = window(uvec2(shadow_size))*lightP*lightV;
 	//	transform geometry wrt the light
 	auto torus_light_tvtc = transform(torus_vtc, lightWnPV, torus_W);
-	auto floor_light_tvtc = transform(floor_vtc, lightWnPV, floor_W);
+	auto room_light_tvtc = transform(room_vtc, lightWnPV, room_W);
 
 	auto transform_raster = chrono::system_clock::now();
 
@@ -311,7 +345,7 @@ int main() {
 		}
 	};
 	draw(torus_light_tvtc, torus_ixd, shadow);
-	draw(floor_light_tvtc, floor_ixd, shadow);
+	draw(room_light_tvtc, room_ixd, shadow);
 
 	/* debug output of shadow map */
 #ifdef DEBUG_SHADOW
@@ -365,7 +399,7 @@ int main() {
 		}
 	};
 	draw(torus_tvtc, torus_ixd, shade);
-	draw(floor_tvtc, floor_ixd, shade);
+	draw(room_tvtc, room_ixd, shade);
 
 	auto raster_end = chrono::system_clock::now();
 

@@ -136,6 +136,7 @@
   <ItemGroup>
     <ClInclude Include="cmmn.h" />
     <ClInclude Include="texture.h" />
+    <ClInclude Include="tiny_obj_loader.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
