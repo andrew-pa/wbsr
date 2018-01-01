@@ -2,6 +2,11 @@
 #include "texture.h"
 using namespace agt;
 
+#include <glm/gtc/random.hpp>
+
+#define TINYOBJLOADER_IMPLEMENTATION
+#include "tiny_obj_loader.h"
+
 struct in_vertex {
 	vec3 pos;
 	vec3 nor;
@@ -130,6 +135,8 @@ void generate_sphere(float radius, uint slice_count, uint stack_count, function<
 	}
 }
 
+//#define AA
+
 void draw(const vector<rs_vertex>& vertices, const vector<uint32>& indices, function<void(uvec2, vec3, float, const rs_vertex&,const rs_vertex&,const rs_vertex&)> F) {
 	for (int i = 0; i < indices.size(); i += 3) {
 		const auto& v0 = vertices[indices[i]];
@@ -186,6 +193,7 @@ void draw(const vector<rs_vertex>& vertices, const vector<uint32>& indices, func
 			// store where this scanline started in (γ, α, β) and depth
 			vec3 start_gab = gab; float start_z = z;
 			for (ptrdiff_t x = min_x; x < max_x; ++x) {
+#ifndef AA
 				// is this pixel inside the triangle?
 				if (gab.x >= 0 && gab.y >= 0 && gab.z >= 0) {
 					// deal with shared edges
@@ -193,6 +201,22 @@ void draw(const vector<rs_vertex>& vertices, const vector<uint32>& indices, func
 						F(uvec2(x, y), gab, z, v0, v1, v2);
 					}
 				}
+#else
+				for (size_t su = 0; su < 2; ++su) {
+					for (size_t sv = 0; sv < 2; ++sv) {
+						float u = (su+linearRand(0.f, 1.f))/2.f;
+						float v = (sv+linearRand(0.f, 1.f))/2.f;
+						vec3 sgab = gab + dgab_dx * u + dgab_dy * v;
+						// is this pixel inside the triangle?
+						if (sgab.x >= 0 && sgab.y >= 0 && sgab.z >= 0) {
+							// deal with shared edges
+							if ((sgab.x > 0 || det.x > 0) && (sgab.y > 0 || det.y > 0) && (sgab.z > 0 || det.z > 0)) {
+								F(uvec2(x, y), sgab, z + dz_dx*u + dz_dy*v, v0, v1, v2);
+							}
+						}
+					}
+				}
+#endif
 				gab += dgab_dx; z += dz_dx;
 			}
 			gab = start_gab + dgab_dy; z = start_z + dz_dy;
@@ -222,11 +246,12 @@ int main() {
 	auto start = chrono::system_clock::now();
 	/* create render buffers */
 	texture2d buf{
-		//uvec2(640, 400)
-		uvec2(3840, 2160)
+		//uvec2(320, 200)
+		uvec2(640, 400)
+		//uvec2(3840, 2160)
 	};
 	vector<float> depth(buf.size.x*buf.size.y, 1e9);
-	const size_t shadow_size = 2048;
+	const size_t shadow_size = 512;
 	vector<float> shadow_depth(shadow_size*shadow_size, 1e9);
 
 	/* initialize geometry */
@@ -250,7 +275,7 @@ int main() {
 	checkerboard_texture tex{ vec3(0.2f), vec3(1.f), 16.f };
 
 	/* object transforms */
-	mat4 torus_W = mat4(1);// rotate(mat4(1), pi<float>() / 3.f, vec3(1.f, 1.f, 0.f));
+	mat4 torus_W = rotate(mat4(1), pi<float>() / 6.f, vec3(1.f, 1.f, 0.f));
 	mat4 floor_W = scale(translate(mat4(1), vec3(0.f, -1.5f, 0.f)), vec3(3.f));
 
 	/* camera transforms */
@@ -304,7 +329,7 @@ int main() {
 	/* rasterize image */
 	auto shade = [&](uvec2 px, vec3 gab, float z, const rs_vertex& v0, const rs_vertex& v1, const rs_vertex& v2) {
 		if (px.x < 0 || px.x >= buf.size.x || px.y < 0 || px.y >= buf.size.y) return;
-		if (z < depth[px.x + px.y * buf.size.x]) {
+		if (z <= depth[px.x + px.y * buf.size.x]) {
 			// compute persepective correct interpolators
 			float d = v1.pos.w*v2.pos.w + v2.pos.w*gab.z*(v0.pos.w - v1.pos.w) + v1.pos.w*gab.x*(v0.pos.w - v2.pos.w);
 			float bw = v0.pos.w*v2.pos.w*gab.z / d;
@@ -331,7 +356,11 @@ int main() {
 			vec3 col = vec3(0.9f, 0.8f, 0.6f)*glm::max(0.f, dot(nor, L))*shadow + vec3(0.f, 0.04f, 0.09f);
 
 			// write to render target + gamma correction
+#ifdef AA
+			buf.pixel(px) += pow(col * tex.texel(uv), vec3(0.4545)) * 0.25f;
+#else
 			buf.pixel(px) = pow(col * tex.texel(uv), vec3(0.4545));
+#endif
 			depth[px.x + px.y * buf.size.x] = z;
 		}
 	};
@@ -342,12 +371,12 @@ int main() {
 
 	/* write render to file */
 	ostringstream wm;
-	wm << "WBSR total " << chrono::duration_cast<chrono::milliseconds>(raster_end - start).count() << "ms" << endl;
-	wm << "     init  " << chrono::duration_cast<chrono::milliseconds>(start_transform - start).count() << "ms" << endl;
-	wm << "     trns  " << chrono::duration_cast<chrono::milliseconds>(transform_raster - start_transform).count() << "ms" << endl;
-	wm << "     rstr  " << chrono::duration_cast<chrono::milliseconds>(raster_end - transform_raster).count() << "ms" << endl;
-	wm << "       shdw  " << chrono::duration_cast<chrono::milliseconds>(raster_shadow - transform_raster).count() << "ms" << endl;
-	wm << "       colr  " << chrono::duration_cast<chrono::milliseconds>(raster_end - raster_shadow).count() << "ms" << endl;
+	wm << "total " << chrono::duration_cast<chrono::milliseconds>(raster_end - start).count() << "ms" << endl;
+	wm << " init " << chrono::duration_cast<chrono::milliseconds>(start_transform - start).count() << "ms" << endl;
+	wm << " trns " << chrono::duration_cast<chrono::milliseconds>(transform_raster - start_transform).count() << "ms" << endl;
+	wm << " rstr " << chrono::duration_cast<chrono::milliseconds>(raster_end - transform_raster).count() << "ms" << endl;
+	wm << "  shdw " << chrono::duration_cast<chrono::milliseconds>(raster_shadow - transform_raster).count() << "ms" << endl;
+	wm << "  colr " << chrono::duration_cast<chrono::milliseconds>(raster_end - raster_shadow).count() << "ms" << endl;
 
 	buf.draw_text(wm.str(), uvec2(8, 8), vec3(1.f, 1.f, 0.f));
 	ostringstream filename; filename << "rndr" << time(nullptr) << ".bmp";
