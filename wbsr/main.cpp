@@ -136,6 +136,7 @@ void generate_sphere(float radius, uint slice_count, uint stack_count, function<
 }
 
 //#define AA
+//#define DEBUG_SHADOW
 
 void draw(const vector<rs_vertex>& vertices, const vector<uint32>& indices, function<void(uvec2, vec3, float, const rs_vertex&,const rs_vertex&,const rs_vertex&)> F) {
 	for (int i = 0; i < indices.size(); i += 3) {
@@ -224,8 +225,9 @@ void draw(const vector<rs_vertex>& vertices, const vector<uint32>& indices, func
 	}
 }
 
-vector<rs_vertex> transform(const vector<in_vertex>& vtc, mat4 vp, mat4 world) {
+pair<vector<rs_vertex>, vector<uint32>> transform_clip(const vector<in_vertex>& vtc, const vector<uint32>& ixd, mat4 vp, mat4 world) {
 	vector<rs_vertex> nvtc(vtc.size());
+	// transform vertices from model → homogeneous projected space
 	for (size_t i = 0; i < vtc.size(); ++i) {
 		nvtc[i].posW = world * vec4(vtc[i].pos,1.f);
 		nvtc[i].pos = vp * nvtc[i].posW;
@@ -235,7 +237,36 @@ vector<rs_vertex> transform(const vector<in_vertex>& vtc, mat4 vp, mat4 world) {
 		nvtc[i].nor = (world * vec4(vtc[i].nor, 0.f)).xyz;
 		nvtc[i].tex = vtc[i].tex;
 	}
-	return nvtc;
+
+	/*vector<uint32> nixd(ixd.size());
+	const float l = 0.f, r = 2048.f, b = 0.f, t = 2048.f, n = 0.1f, f = 10.f;
+	for (size_t i = 0; i < ixd.size(); i += 3) {
+		vec3 x = vec3(nvtc[ixd[i]].pos.x, nvtc[ixd[i+1]].pos.x, nvtc[ixd[i+2]].pos.x);
+		vec3 y = vec3(nvtc[ixd[i]].pos.y, nvtc[ixd[i+1]].pos.y, nvtc[ixd[i+2]].pos.y);
+		vec3 z = vec3(nvtc[ixd[i]].pos.z, nvtc[ixd[i+1]].pos.z, nvtc[ixd[i+2]].pos.z);
+		vec3 w = vec3(nvtc[ixd[i]].pos.w, nvtc[ixd[i+1]].pos.w, nvtc[ixd[i+2]].pos.w);
+		// clip against near plane
+		vec3 np = -z + n * w;
+		if (np.x > 0 || np.y > 0 || np.z > 0)
+			continue;
+		// clip against far plane
+		vec3 fp = z - f * w;
+		if (fp.x > 0 || fp.y > 0 || fp.z > 0)
+			continue;
+
+
+		nixd[i]   = ixd[i];
+		nixd[i+1] = ixd[i+1];
+		nixd[i+2] = ixd[i+2];
+	}
+
+	for (size_t i = 0; i < nvtc.size(); ++i) {
+		nvtc[i].pos.x /= nvtc[i].pos.w;
+		nvtc[i].pos.y /= nvtc[i].pos.w;
+		nvtc[i].pos.z /= nvtc[i].pos.w;
+	}*/
+
+	return { nvtc, ixd };
 }
 
 mat4 window(uvec2 size) {
@@ -270,7 +301,7 @@ int main() {
 		tinyobj::attrib_t attrib;
 		vector<tinyobj::shape_t> shapes; vector<tinyobj::material_t> materials;
 		string err;
-		tinyobj::LoadObj(&attrib, &shapes, &materials, &err, "room.obj");
+		tinyobj::LoadObj(&attrib, &shapes, &materials, &err, "teapot.obj");
 		if (!err.empty()) {
 			cout << "error: " << err << endl;
 			getchar();
@@ -309,31 +340,31 @@ int main() {
 	checkerboard_texture tex{ vec3(0.2f), vec3(1.f), 16.f };
 
 	/* object transforms */
-	mat4 torus_W = rotate(mat4(1), pi<float>() / 6.f, vec3(1.f, 1.f, 0.f));
-	mat4 room_W = scale(mat4(1), vec3(.3f));
+	mat4 torus_W = rotate(translate(mat4(1), vec3(3.5f, 1.5f, 2.f)), pi<float>() / 6.f, vec3(1.f, 1.f, 0.f));
+	mat4 room_W = scale(mat4(1), vec3(.9f));
 
 	/* camera transforms */
-	mat4 V = lookAt(vec3(-3.f, 4.f, 12.f), vec3(0.f, -0.5f, 0.f), vec3(0.f, 1.f, 0.f));
-	mat4 P = perspectiveFov(pi<float>() / 4.f, (float)buf.size.x, (float)buf.size.y, 0.1f, 10.f);
+	mat4 V = lookAt(vec3(-3.f, 6.0f, 8.f), vec3(1.f, 0.7f, 1.f), vec3(0.f, 1.f, 0.f));
+	mat4 P = perspectiveFov(pi<float>() / 3.f, (float)buf.size.x, (float)buf.size.y, 0.1f, 10.f);
 	mat4 Wn = window(buf.size);
 	mat4  WnPV = Wn * P * V;
 
 	auto start_transform = chrono::system_clock::now();
 
 	/* transform geometry */
-	auto torus_tvtc = transform(torus_vtc, WnPV, torus_W);
-	auto room_tvtc = transform(room_vtc, WnPV, room_W);
+	auto torus_tf = transform_clip(torus_vtc, torus_ixd, WnPV, torus_W);
+	auto room_tf = transform_clip(room_vtc, room_ixd, WnPV, room_W);
 
 	/* deal with lights */
 	const vec3 L = normalize(vec3(-0.5f, 1.f, -0.2f));
 
 	/* compute light 'camera' transforms */
-	mat4 lightV = lookAt(8.f*L, vec3(0.f), vec3(0.f, 1.f, 0.f));
-	mat4 lightP = ortho(-6.f, 6.f, -6.f, 6.f, 0.1f, 10.f);
+	mat4 lightV = lookAt(4.f*L, vec3(0.f), vec3(0.f, 1.f, 0.f));
+	mat4 lightP = ortho(-12.f, 12.f, -12.f, 12.f, 0.5f, 8.f);
 	mat4 lightWnPV = window(uvec2(shadow_size))*lightP*lightV;
 	//	transform geometry wrt the light
-	auto torus_light_tvtc = transform(torus_vtc, lightWnPV, torus_W);
-	auto room_light_tvtc = transform(room_vtc, lightWnPV, room_W);
+	auto torus_light_tf = transform_clip(torus_vtc, torus_ixd, lightWnPV, torus_W);
+	auto room_light_tf = transform_clip(room_vtc, room_ixd, lightWnPV, room_W);
 
 	auto transform_raster = chrono::system_clock::now();
 
@@ -344,8 +375,8 @@ int main() {
 			shadow_depth[px.x + px.y*shadow_size] = z;
 		}
 	};
-	draw(torus_light_tvtc, torus_ixd, shadow);
-	draw(room_light_tvtc, room_ixd, shadow);
+	draw(torus_light_tf.first, torus_light_tf.second, shadow);
+	draw(room_light_tf.first, room_light_tf.second, shadow);
 
 	/* debug output of shadow map */
 #ifdef DEBUG_SHADOW
@@ -371,11 +402,11 @@ int main() {
 			float aw = 1.0f - bw - gw;
 
 			// project this point as seen from light
+			float shadow = 1.f;
 			vec4 posW = aw * v0.posW + bw * v1.posW + gw * v2.posW;
-			vec4 pos_light = lightWnPV * posW;
+			vec4 pos_light = lightWnPV * posW; // this would be much faster done in transform() but it would make transform() more specific
 			pos_light /= pos_light.w;
 			pos_light.xy = floor(pos_light.xy());
-			float shadow = 1.f;
 			if (pos_light.x >= 0 && pos_light.x < shadow_size && pos_light.y >= 0 && pos_light.y < shadow_size) {
 				float lightZ = shadow_depth[pos_light.x + pos_light.y * shadow_size];
 				if (abs(lightZ - pos_light.z) > 0.1f) shadow = 0.f;
@@ -398,8 +429,8 @@ int main() {
 			depth[px.x + px.y * buf.size.x] = z;
 		}
 	};
-	draw(torus_tvtc, torus_ixd, shade);
-	draw(room_tvtc, room_ixd, shade);
+	draw(torus_tf.first, torus_tf.second, shade);
+	draw(room_tf.first, room_tf.second, shade);
 
 	auto raster_end = chrono::system_clock::now();
 
